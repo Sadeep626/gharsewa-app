@@ -1,0 +1,6 @@
+{
+  "name": "KinHome — Landlord & Tenant Living Bridge",
+  "description": "Unified houseowner and tenant rental management platform with automated water, electricity, and waste utility billing, family grocery carts & pantry delivery, dispute resolution, lease tracking, and AI-powered legal tenancy consultation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
