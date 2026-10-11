@@ -11,8 +11,12 @@ import {
   ArrowRightLeft,
   CheckCircle2,
   ShoppingCart,
+  FileText,
+  Lock,
+  LogOut,
+  UserCheck,
 } from 'lucide-react';
-import { UserRole, PropertyUnit } from '../types';
+import { UserRole, PropertyUnit, UserAccount } from '../types';
 
 interface TopBarProps {
   currentTab: string;
@@ -22,11 +26,15 @@ interface TopBarProps {
   units: PropertyUnit[];
   selectedUnitId: string;
   setSelectedUnitId: (unitId: string) => void;
+  currentUser: UserAccount | null;
+  onOpenLoginModal: () => void;
+  onLogout: () => void;
   unpaidCount: number;
   openTicketsCount: number;
   overdueAlertsCount?: number;
   totalNotificationCount?: number;
   familyCartCount?: number;
+  logsCount?: number;
   onOpenNotificationCenter?: () => void;
   onOpenFamilyCart?: () => void;
 }
@@ -39,11 +47,15 @@ export const TopBar: React.FC<TopBarProps> = ({
   units,
   selectedUnitId,
   setSelectedUnitId,
+  currentUser,
+  onOpenLoginModal,
+  onLogout,
   unpaidCount,
   openTicketsCount,
   overdueAlertsCount = 0,
   totalNotificationCount = 0,
   familyCartCount = 0,
+  logsCount = 0,
   onOpenNotificationCenter,
   onOpenFamilyCart,
 }) => {
@@ -61,6 +73,7 @@ export const TopBar: React.FC<TopBarProps> = ({
     { id: 'maintenance', label: 'Maintenance Bridge', icon: Wrench },
     { id: 'legal', label: 'Legal Consultation', icon: Scale },
     { id: 'notices', label: 'Building Notices', icon: Bell },
+    { id: 'logs', label: 'Activity Logs', icon: FileText },
   ];
 
   return (
@@ -193,6 +206,31 @@ export const TopBar: React.FC<TopBarProps> = ({
               </button>
             )}
 
+            {/* User Session Profile / Login Trigger */}
+            <button
+              onClick={onOpenLoginModal}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs text-slate-800 font-medium transition-colors shadow-2xs group"
+              title={currentUser ? `Logged in as ${currentUser.name} (Click to switch or log out)` : 'Open Login Facility'}
+            >
+              {currentUser ? (
+                <>
+                  <span className="text-base leading-none">{currentUser.avatar}</span>
+                  <span className="font-semibold hidden xl:inline text-slate-900 group-hover:text-indigo-600 transition-colors">
+                    {currentUser.name}
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-normal">
+                    {currentUser.role === 'landlord' ? 'Owner' : currentUser.unitNumber}
+                  </span>
+                  <Lock className="w-3 h-3 text-slate-400 group-hover:text-indigo-600 ml-0.5" />
+                </>
+              ) : (
+                <>
+                  <Lock className="w-3.5 h-3.5 text-indigo-600" />
+                  <span className="font-semibold text-indigo-700">Log In (लग-इन)</span>
+                </>
+              )}
+            </button>
+
             {/* Notification Center Trigger */}
             {onOpenNotificationCenter && (
               <button
@@ -238,23 +276,46 @@ export const TopBar: React.FC<TopBarProps> = ({
       <div className="bg-slate-50 border-t border-slate-200/80 px-4 sm:px-6 lg:px-8 py-1.5 text-xs text-slate-600">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-800">
-              {userRole === 'landlord'
-                ? 'Houseowner View: Rajan Shrestha (Houseowner)'
-                : `Tenant Portal: ${selectedUnit.tenantFamilyName} (${selectedUnit.unitNumber})`}
+            <span className="font-semibold text-slate-800 flex items-center gap-1.5">
+              {currentUser ? (
+                <>
+                  <span>{currentUser.avatar}</span>
+                  <span>{currentUser.name}</span>
+                  <span className="text-[11px] font-normal text-slate-500 font-mono">
+                    ({currentUser.role === 'landlord' ? 'Owner / Manager' : currentUser.unitNumber})
+                  </span>
+                </>
+              ) : userRole === 'landlord' ? (
+                'Houseowner View: Rajan Shrestha'
+              ) : (
+                `Tenant Portal: ${selectedUnit.tenantFamilyName} (${selectedUnit.unitNumber})`
+              )}
             </span>
             <span aria-hidden="true" className="text-slate-400">·</span>
-            <span>Himalayan Heights Residency, New Baneshwor, Kathmandu</span>
+            <span>Himalayan Heights, New Baneshwor, Kathmandu</span>
+            <span aria-hidden="true" className="text-slate-400">·</span>
+            <button
+              onClick={onOpenLoginModal}
+              className="text-indigo-600 hover:text-indigo-800 font-semibold text-[11px] hover:underline flex items-center gap-1"
+            >
+              <UserCheck className="w-3 h-3" />
+              <span>{currentUser ? 'Switch Account' : 'Log In'}</span>
+            </button>
           </div>
 
           <div className="flex items-center gap-3 text-slate-500">
+            {currentUser && (
+              <span className="text-[11px] text-slate-500 hidden sm:inline">
+                PIN Secured Session · Last login: {currentUser.lastLogin || 'Active'}
+              </span>
+            )}
             {userRole === 'tenant' ? (
               <div className="flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                 <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                 <span>Active Tenancy · Lease ends {selectedUnit.leaseEnd}</span>
               </div>
             ) : (
-              <span>3 Units Total · 100% Occupancy · Water, Electric & Waste Meters Active</span>
+              <span>3 Units Total · 100% Occupancy · Water, Electric & Waste Active</span>
             )}
           </div>
         </div>

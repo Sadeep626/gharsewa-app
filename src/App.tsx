@@ -17,6 +17,8 @@ import {
   INITIAL_GROCERY_ITEMS,
   INITIAL_FAMILY_CARTS,
   INITIAL_GROCERY_ORDERS,
+  INITIAL_USER_ACCOUNTS,
+  INITIAL_ACTIVITY_LOGS,
 } from './data/mockData';
 import {
   UserRole,
@@ -32,6 +34,8 @@ import {
   GroceryItem,
   CartItem,
   FamilyGroceryOrder,
+  UserAccount,
+  ActivityLogEntry,
 } from './types';
 import { formatNRS } from './utils/currency';
 import {
@@ -52,11 +56,95 @@ import { InvoiceDetailModal } from './components/InvoiceDetailModal';
 import { PaymentModal } from './components/PaymentModal';
 import { LeaseRenewalModal } from './components/LeaseRenewalModal';
 import { NotificationCenterSidebar } from './components/NotificationCenterSidebar';
+import { AuthLoginModal } from './components/AuthLoginModal';
+import { ActivityLogsView } from './components/ActivityLogsView';
 
 export default function App() {
-  const [userRole, setUserRole] = useState<UserRole>('landlord');
-  const [selectedUnitId, setSelectedUnitId] = useState<string>('unit-201');
+  const [accounts] = useState<UserAccount[]>(INITIAL_USER_ACCOUNTS);
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
+    try {
+      const saved = localStorage.getItem('kinhome_user_session');
+      if (saved) return JSON.parse(saved);
+    } catch {
+      // ignore
+    }
+    return INITIAL_USER_ACCOUNTS[0]; // Rajan Shrestha (Houseowner) default
+  });
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [activityLogs, setActivityLogs] = useState<ActivityLogEntry[]>(INITIAL_ACTIVITY_LOGS);
+
+  const [userRole, setUserRole] = useState<UserRole>(() => currentUser?.role || 'landlord');
+  const [selectedUnitId, setSelectedUnitId] = useState<string>(() => currentUser?.unitId || 'unit-201');
   const [currentTab, setCurrentTab] = useState<string>('overview');
+
+  // Centralized Activity Logger Facility Helper
+  const logActivity = (
+    category: ActivityLogEntry['category'],
+    action: string,
+    description: string,
+    severity: ActivityLogEntry['severity'] = 'info',
+    unitNumber?: string,
+    customActor?: { name: string; role: UserRole | 'system' }
+  ) => {
+    const newEntry: ActivityLogEntry = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      timestamp: new Date().toISOString(),
+      category,
+      action,
+      description,
+      severity,
+      actorName: customActor?.name || currentUser?.name || 'Authorized User',
+      actorRole: customActor?.role || currentUser?.role || userRole,
+      unitNumber:
+        unitNumber ||
+        currentUser?.unitNumber ||
+        (userRole === 'tenant' ? units.find((u) => u.id === selectedUnitId)?.unitNumber : undefined),
+      ipOrDevice: 'Kathmandu Residency Web Portal',
+    };
+    setActivityLogs((prev) => [newEntry, ...prev]);
+  };
+
+  const handleLogin = (user: UserAccount, method: string) => {
+    setCurrentUser(user);
+    setUserRole(user.role);
+    if (user.unitId) {
+      setSelectedUnitId(user.unitId);
+    }
+    try {
+      localStorage.setItem('kinhome_user_session', JSON.stringify(user));
+    } catch {
+      // ignore
+    }
+    logActivity(
+      'auth',
+      'User Authentication Succeeded',
+      `${user.name} authenticated into ${
+        user.role === 'landlord'
+          ? 'Houseowner Administration'
+          : `Tenant Living Portal (${user.unitNumber})`
+      } via ${method}.`,
+      'success',
+      user.unitNumber,
+      { name: user.name, role: user.role }
+    );
+  };
+
+  const handleLogout = () => {
+    const prevName = currentUser?.name || 'Resident';
+    setCurrentUser(null);
+    try {
+      localStorage.removeItem('kinhome_user_session');
+    } catch {
+      // ignore
+    }
+    logActivity(
+      'auth',
+      'User Session Ended',
+      `${prevName} logged out of the portal session.`,
+      'info'
+    );
+    setIsLoginModalOpen(true);
+  };
 
   // Application Data States (persistent in memory during session)
   const [units, setUnits] = useState<PropertyUnit[]>(INITIAL_UNITS);
@@ -138,6 +226,15 @@ export default function App() {
     setWaterReadings([newWater, ...waterReadings]);
     setElectricReadings([newElectric, ...electricReadings]);
     setInvoices([newInvoice, ...invoices]);
+
+    const targetUnit = units.find((u) => u.id === newWater.unitId);
+    logActivity(
+      'meter',
+      'Sub-Meter Readings Logged',
+      `Logged water reading ${newWater.currentReading} m³ (${newWater.consumption} m³ cons.) & electricity ${newElectric.currentReading} kWh for ${targetUnit?.unitNumber || 'Unit'}. Invoice generated: ${formatNRS(newInvoice.totalDue)}.`,
+      'info',
+      targetUnit?.unitNumber
+    );
   };
 
   const handleConfirmPayment = (
@@ -145,6 +242,9 @@ export default function App() {
     paymentMethod: ConsolidatedInvoice['paymentMethod'],
     reference: string
   ) => {
+    const targetInv = invoices.find((inv) => inv.id === invoiceId);
+    const targetUnit = targetInv ? units.find((u) => u.id === targetInv.unitId) : undefined;
+
     setInvoices((prev) =>
       prev.map((inv) =>
         inv.id === invoiceId
@@ -161,6 +261,14 @@ export default function App() {
 
     // Clear automated overdue notices for this settled invoice
     setNotices((prev) => prev.filter((n) => n.invoiceId !== invoiceId));
+
+    logActivity(
+      'billing',
+      'Rent & Utility Payment Settled',
+      `Invoice ${invoiceId} settled via ${paymentMethod} (Ref: ${reference}). Amount: ${formatNRS(targetInv?.totalDue || 0)}.`,
+      'success',
+      targetUnit?.unitNumber
+    );
   };
 
   const handleRunOverdueAudit = () => {
@@ -255,8 +363,17 @@ export default function App() {
       [selectedUnitId]: [],
     }));
 
+    const activeUnit = units.find((u) => u.id === selectedUnitId);
+
+    logActivity(
+      'groceries',
+      'Family Grocery Order Confirmed',
+      `Order #${order.orderNumber} for ${order.deliveryLocation} placed (${order.items.length} items, total ${formatNRS(order.totalAmount)}). Payment: ${order.paymentMethod}.`,
+      'info',
+      activeUnit?.unitNumber
+    );
+
     if (order.paymentMethod === 'add_to_monthly_bill') {
-      const activeUnit = units.find((u) => u.id === selectedUnitId);
       const groceryNotice: BuildingNotice = {
         id: `notif-gro-${Date.now()}`,
         title: `Pantry Delivery Added to Monthly Ledger: ${order.orderNumber}`,
@@ -280,6 +397,13 @@ export default function App() {
     setGroceryOrders((prev) =>
       prev.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o))
     );
+
+    logActivity(
+      'groceries',
+      'Grocery Delivery Status Updated',
+      `Order #${orderId} status changed to "${newStatus}".`,
+      'info'
+    );
   };
 
   const handleUpdateTicket = (updated: MaintenanceTicket) => {
@@ -290,6 +414,14 @@ export default function App() {
 
   const handleAddTicket = (newTicket: MaintenanceTicket) => {
     setMaintenanceTickets([newTicket, ...maintenanceTickets]);
+    const targetUnit = units.find((u) => u.id === newTicket.unitId);
+    logActivity(
+      'maintenance',
+      'New Maintenance Ticket Created',
+      `Ticket #${newTicket.id} (${newTicket.category}, ${newTicket.priority} priority): "${newTicket.description.substring(0, 60)}"`,
+      'warning',
+      targetUnit?.unitNumber
+    );
   };
 
   const handleAddNotice = (newNotice: BuildingNotice) => {
@@ -418,11 +550,15 @@ export default function App() {
         units={units}
         selectedUnitId={selectedUnitId}
         setSelectedUnitId={setSelectedUnitId}
+        currentUser={currentUser}
+        onOpenLoginModal={() => setIsLoginModalOpen(true)}
+        onLogout={handleLogout}
         unpaidCount={unpaidCount}
         openTicketsCount={openTicketsCount}
         overdueAlertsCount={overdueAlertsCount}
         totalNotificationCount={totalNotificationCount}
         familyCartCount={familyCartCount}
+        logsCount={activityLogs.length}
         onOpenNotificationCenter={() => setIsNotificationCenterOpen(true)}
         onOpenFamilyCart={() => setIsFamilyCartOpen(true)}
       />
@@ -527,6 +663,23 @@ export default function App() {
             onNavigateTab={setCurrentTab}
           />
         )}
+
+        {currentTab === 'logs' && (
+          <ActivityLogsView
+            logs={activityLogs}
+            currentUser={currentUser}
+            units={units}
+            onAddManualLog={(entry) => {
+              const newLog: ActivityLogEntry = {
+                ...entry,
+                id: `log-${Date.now()}`,
+                timestamp: new Date().toISOString(),
+              };
+              setActivityLogs((prev) => [newLog, ...prev]);
+            }}
+            onOpenLoginModal={() => setIsLoginModalOpen(true)}
+          />
+        )}
       </main>
 
       {/* Modals */}
@@ -613,6 +766,16 @@ export default function App() {
           setIsNotificationCenterOpen(false);
           setSelectedExpiringUnitForModal(unit);
         }}
+      />
+
+      {/* Auth & Login Facility Modal */}
+      <AuthLoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        currentUser={currentUser}
+        accounts={accounts}
+        onSelectUser={handleLogin}
+        onLogout={handleLogout}
       />
 
       {/* Clean Uncluttered Footer adhering to Anti-Slop Rule 1.B */}

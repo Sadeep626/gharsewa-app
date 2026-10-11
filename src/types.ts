@@ -233,3 +233,34 @@ export interface RecipeRecommendation {
   culturalNote?: string;
 }
 
+export interface UserAccount {
+  id: string;
+  username: string;
+  name: string;
+  nepaliName?: string;
+  email: string;
+  phone: string;
+  role: UserRole;
+  unitId?: string;
+  unitNumber?: string;
+  avatar: string;
+  pin: string; // 4-digit security PIN e.g. "1234"
+  accessCode: string; // Flat or building passcode e.g. "KTM-201"
+  badge: string;
+  lastLogin?: string;
+  status: 'active' | 'suspended';
+}
+
+export interface ActivityLogEntry {
+  id: string;
+  timestamp: string;
+  category: 'auth' | 'meter' | 'billing' | 'groceries' | 'maintenance' | 'legal' | 'notices' | 'system';
+  action: string;
+  description: string;
+  actorName: string;
+  actorRole: UserRole | 'system';
+  unitNumber?: string;
+  severity: 'info' | 'success' | 'warning' | 'alert';
+  ipOrDevice?: string;
+}
+
